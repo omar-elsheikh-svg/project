@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 *.pyc
 executive_summary.txt
+AI_ENGINEER_GUIDE.md
