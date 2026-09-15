@@ -1,4 +1,5 @@
 import io
+import logging
 import uuid
 
 import pandas as pd
@@ -19,6 +20,7 @@ from app.supabase_client import get_supabase
 from project import calculate_all_insights, clean_df, features_finder
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Sales Intelligence API", version="1.0.0")
 app.state.limiter = limiter
@@ -49,7 +51,8 @@ def profile(user: dict = Depends(current_user)) -> dict:
         .maybe_single()
         .execute()
     )
-    return {"user_id": user["id"], "tier": (result.data or {}).get("plan", "free")}
+    plan = str((result.data or {}).get("plan", "free")).lower()
+    return {"user_id": user["id"], "plan": plan, "tier": plan}
 
 
 @app.post("/datasets/analyze")
@@ -193,5 +196,6 @@ async def stripe_webhook(request: Request) -> dict:
             await request.body(), request.headers.get("stripe-signature", "")
         )
     except Exception as exc:
+        logger.exception("Stripe webhook processing failed")
         raise HTTPException(status_code=400, detail="Invalid Stripe webhook") from exc
     return {"received": True}

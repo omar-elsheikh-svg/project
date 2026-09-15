@@ -15,8 +15,8 @@ API_URL = os.getenv("API_URL", "http://localhost:8000").rstrip("/")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
 
-st.set_page_config(page_title="Sales Intelligence", page_icon="S", layout="wide")
-st.title("Sales Intelligence")
+st.set_page_config(page_title="FinExpert", page_icon="F", layout="wide")
+st.title("FinExpert")
 st.caption(
     "Upload sales data, understand the numbers, then generate an executive report when it is useful."
 )
@@ -75,9 +75,28 @@ def response_error(response) -> str:
         return text or f"API request failed with HTTP {response.status_code}."
 
 
+def sync_user_profile() -> None:
+    """Refresh the plan on every Streamlit rerun without caching the response."""
+    response = api_request("GET", "/me")
+    if response is not None and response.ok:
+        profile = response.json()
+        plan = str(profile.get("plan", profile.get("tier", "free"))).lower()
+        st.session_state.user_profile = {**profile, "plan": plan, "tier": plan}
+        return
+
+    # A stale premium flag must never keep premium UI enabled after a failed sync.
+    st.session_state.user_profile = {"plan": "free", "tier": "free"}
+    if response is not None and response.status_code == 401:
+        st.session_state.clear()
+        st.rerun()
+    st.warning(
+        "Your plan could not be refreshed. Premium features are temporarily locked."
+    )
+
+
 def is_premium() -> bool:
     profile = st.session_state.get("user_profile", {})
-    return str(profile.get("tier", "free")).lower() == "premium"
+    return str(profile.get("plan", profile.get("tier", "free"))).lower() == "premium"
 
 
 def render_upgrade_cta(key: str) -> None:
@@ -160,12 +179,7 @@ if "access_token" not in st.session_state:
             st.error(f"Login failed: {exc}")
     st.stop()
 
-if "user_profile" not in st.session_state:
-    profile_response = api_request("GET", "/me")
-    if profile_response is not None and profile_response.ok:
-        st.session_state.user_profile = profile_response.json()
-    else:
-        st.session_state.user_profile = {"tier": "free"}
+sync_user_profile()
 
 if st.sidebar.button("Log out"):
     st.session_state.clear()
@@ -324,7 +338,7 @@ if "dataset" in st.session_state:
             )
             render_upgrade_cta("upgrade_exports")
 
-if not is_premium():
-    with st.sidebar:
-        st.caption("Free plan")
+with st.sidebar:
+    st.caption("Premium Plan" if is_premium() else "Free Plan")
+    if not is_premium():
         render_upgrade_cta("upgrade_sidebar")
