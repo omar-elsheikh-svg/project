@@ -65,6 +65,35 @@ def test_missing_profile_is_provisioned(monkeypatch):
     assert client.profile_query.payload == {"id": "user-id"}
 
 
+def test_free_profile_is_blocked_from_premium_features(monkeypatch):
+    class Query:
+        data = {"plan": "free"}
+
+        def select(self, *_):
+            return self
+
+        def eq(self, *_):
+            return self
+
+        def maybe_single(self):
+            return self
+
+        def execute(self):
+            return self
+
+    class Supabase:
+        def table(self, name):
+            assert name == "profiles"
+            return Query()
+
+    monkeypatch.setattr(limits, "get_supabase", lambda: Supabase())
+    import pytest
+
+    with pytest.raises(Exception) as error:
+        limits.ensure_premium("user-id")
+    assert error.value.status_code == 402
+
+
 def test_openrouter_falls_back_to_next_model(monkeypatch):
     class Response:
         choices = [

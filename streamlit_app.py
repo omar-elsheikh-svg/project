@@ -1,4 +1,5 @@
 import os
+from html import escape
 from pathlib import Path
 
 import pandas as pd
@@ -18,6 +19,25 @@ st.set_page_config(page_title="Sales Intelligence", page_icon="S", layout="wide"
 st.title("Sales Intelligence")
 st.caption(
     "Upload sales data, understand the numbers, then generate an executive report when it is useful."
+)
+st.markdown(
+    """
+    <style>
+    .premium-blur {
+        filter: blur(5px);
+        opacity: 0.62;
+        user-select: none;
+        pointer-events: none;
+        max-height: 110px;
+        overflow: hidden;
+        border-radius: 8px;
+        padding: 0.5rem 0.75rem;
+        background: rgba(128, 128, 128, 0.08);
+    }
+    .teaser-copy { color: #a8b3c2; margin: 0.35rem 0 0.8rem; }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 
@@ -53,6 +73,52 @@ def response_error(response) -> str:
     except ValueError:
         text = response.text.strip()
         return text or f"API request failed with HTTP {response.status_code}."
+
+
+def is_premium() -> bool:
+    profile = st.session_state.get("user_profile", {})
+    return str(profile.get("tier", "free")).lower() == "premium"
+
+
+def render_upgrade_cta(key: str) -> None:
+    if st.button(
+        "🔒 Unlock Full Growth Strategy for only $4.99/mo. Stop guessing your marketing. Get actionable cross-selling & peak hour data instantly!",
+        key=key,
+        type="primary",
+    ):
+        checkout_response = api_request("POST", "/billing/checkout")
+        if checkout_response is not None and checkout_response.ok:
+            st.link_button(
+                "Continue to secure Stripe checkout",
+                checkout_response.json()["checkout_url"],
+            )
+        else:
+            st.error(response_error(checkout_response))
+
+
+def teaser_table(rows: list[dict], columns: list[str], key: str) -> None:
+    visible = rows[:2]
+    if visible:
+        st.dataframe(pd.DataFrame(visible), hide_index=True, width="stretch")
+    hidden = rows[2:]
+    if hidden:
+        cells = "".join(
+            f"<tr>{''.join(f'<td>{escape(str(row.get(column, "")))}</td>' for column in columns)}</tr>"
+            for row in hidden
+        )
+        headers = "".join(
+            f"<th>{escape(column.replace('_', ' ').title())}</th>" for column in columns
+        )
+        st.markdown(
+            f'<div class="premium-blur"><table><thead><tr>{headers}</tr></thead><tbody>{cells}</tbody></table></div>',
+            unsafe_allow_html=True,
+        )
+    elif rows:
+        st.markdown(
+            '<div class="premium-blur">More growth opportunities are available in Premium.</div>',
+            unsafe_allow_html=True,
+        )
+    render_upgrade_cta(key)
 
 
 if "access_token" not in st.session_state:
@@ -94,6 +160,13 @@ if "access_token" not in st.session_state:
             st.error(f"Login failed: {exc}")
     st.stop()
 
+if "user_profile" not in st.session_state:
+    profile_response = api_request("GET", "/me")
+    if profile_response is not None and profile_response.ok:
+        st.session_state.user_profile = profile_response.json()
+    else:
+        st.session_state.user_profile = {"tier": "free"}
+
 if st.sidebar.button("Log out"):
     st.session_state.clear()
     st.rerun()
@@ -115,7 +188,7 @@ if "dataset" in st.session_state:
     dataset = st.session_state.dataset
     insights = dataset["insights"]
     metrics = insights.get("general_metrics", {})
-    columns = st.columns(4)
+    columns = st.columns(5)
     columns[0].metric("Revenue", f"{metrics.get('total_revenue', 0):,.2f}")
     columns[1].metric("Orders", f"{metrics.get('total_orders', 0):,}")
     columns[2].metric("Average order", f"{metrics.get('average_order_value', 0):,.2f}")
@@ -127,6 +200,36 @@ if "dataset" in st.session_state:
             else "N/A"
         ),
     )
+    basket = insights.get("basket_size_analysis", {})
+    columns[4].metric(
+        "Multi-item orders",
+        f"{basket.get('multi_item_percentage', 0):,.1f}%",
+        help="Orders containing more than one product line.",
+    )
+    st.caption(
+        f"Basket mix: {basket.get('single_item_percentage', 0):,.1f}% single-item orders · "
+        f"{basket.get('multi_item_percentage', 0):,.1f}% multi-item orders"
+    )
+
+    time_analysis = insights.get("time_analysis") or {}
+    peak_hour = time_analysis.get("peak_hour_24h_format")
+    peak_day = time_analysis.get("peak_day_of_week", "N/A")
+    if peak_hour is not None:
+        st.subheader("When customers buy")
+        st.info(f"Peak demand: {int(peak_hour):02d}:00 on {peak_day}")
+        hourly = pd.DataFrame(time_analysis.get("hourly_order_counts", []))
+        if not hourly.empty:
+            st.plotly_chart(
+                px.imshow(
+                    [hourly["orders"].tolist()],
+                    x=[f"{hour:02d}:00" for hour in hourly["hour"]],
+                    y=["Orders"],
+                    labels={"x": "Hour of day", "color": "Orders"},
+                    color_continuous_scale="Blues",
+                    aspect="auto",
+                ),
+                width="stretch",
+            )
 
     top_products = pd.DataFrame(
         insights.get("products_analysis", {}).get("top_5_products", [])
@@ -142,8 +245,27 @@ if "dataset" in st.session_state:
             use_container_width=True,
         )
 
-    action_col, export_col = st.columns(2)
-    with action_col:
+    st.subheader("Growth opportunities")
+    cross_sell = insights.get("cross_selling_opportunities", [])
+    dead_stock = insights.get("products_analysis", {}).get("dead_stock_candidates", [])
+    insight_col, stock_col = st.columns(2)
+    with insight_col:
+        st.markdown("#### Cross-selling opportunities")
+        teaser_table(
+            cross_sell,
+            ["product_1", "product_2", "times_bought_together"],
+            "upgrade_cross_sell",
+        )
+    with stock_col:
+        st.markdown("#### Slow-moving inventory")
+        teaser_table(
+            dead_stock,
+            ["product_name", "units_sold", "revenue_generated"],
+            "upgrade_dead_stock",
+        )
+
+    st.subheader("AI executive report")
+    if is_premium():
         if st.button("Generate AI executive report"):
             with st.spinner("Generating executive report..."):
                 report_response = api_request(
@@ -153,24 +275,56 @@ if "dataset" in st.session_state:
                 st.session_state.report = report_response.json()["report"]
             else:
                 st.error(response_error(report_response))
-    with export_col:
-        markdown_response = api_request(
-            "GET", f"/datasets/{dataset['dataset_id']}/markdown"
-        )
-        pdf_response = api_request("GET", f"/datasets/{dataset['dataset_id']}/pdf")
-        st.download_button(
-            "Download Markdown", markdown_response.content, "report.md", "text/markdown"
-        )
-        st.download_button(
-            "Download PDF", pdf_response.content, "report.pdf", "application/pdf"
-        )
-
-    if "report" in st.session_state:
-        st.markdown(st.session_state.report)
-
-if st.sidebar.button("Upgrade to Premium"):
-    checkout_response = api_request("POST", "/billing/checkout")
-    if checkout_response is not None and checkout_response.ok:
-        st.link_button("Continue to Stripe", checkout_response.json()["checkout_url"])
+        if "report" in st.session_state:
+            st.markdown(st.session_state.report)
     else:
-        st.error(response_error(checkout_response))
+        st.markdown(
+            f"Preview: Your store generated **{metrics.get('total_revenue', 0):,.2f}** in revenue across **{metrics.get('total_orders', 0):,}** orders."
+        )
+        st.markdown(
+            f'<div class="premium-blur">Peak demand is {escape(str(peak_day))} at {escape(str(peak_hour or "your busiest hour"))}:00. The full report includes campaign actions, product pair recommendations, and inventory priorities.</div>',
+            unsafe_allow_html=True,
+        )
+        render_upgrade_cta("upgrade_report")
+
+    export_col = st.container()
+    with export_col:
+        st.markdown("#### Professional exports")
+        if is_premium():
+            markdown_response = api_request(
+                "GET", f"/datasets/{dataset['dataset_id']}/markdown"
+            )
+            pdf_response = api_request("GET", f"/datasets/{dataset['dataset_id']}/pdf")
+            if markdown_response is not None and markdown_response.ok:
+                st.download_button(
+                    "Download Professional Markdown",
+                    markdown_response.content,
+                    "report.md",
+                    "text/markdown",
+                )
+            if pdf_response is not None and pdf_response.ok:
+                st.download_button(
+                    "Download Professional PDF",
+                    pdf_response.content,
+                    "report.pdf",
+                    "application/pdf",
+                )
+        else:
+            st.download_button(
+                "Download Professional Markdown (Premium)",
+                b"",
+                disabled=True,
+                key="locked_markdown",
+            )
+            st.download_button(
+                "Download Professional PDF (Premium)",
+                b"",
+                disabled=True,
+                key="locked_pdf",
+            )
+            render_upgrade_cta("upgrade_exports")
+
+if not is_premium():
+    with st.sidebar:
+        st.caption("Free plan")
+        render_upgrade_cta("upgrade_sidebar")

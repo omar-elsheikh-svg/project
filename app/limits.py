@@ -6,9 +6,7 @@ from .config import get_settings
 from .supabase_client import get_supabase
 
 
-def ensure_report_allowed(user_id: str) -> None:
-    """Enforce the free plan in the database; never rely on a frontend counter."""
-    settings = get_settings()
+def _profile(user_id: str) -> dict:
     result = (
         get_supabase()
         .table("profiles")
@@ -17,7 +15,18 @@ def ensure_report_allowed(user_id: str) -> None:
         .maybe_single()
         .execute()
     )
-    profile = result.data or {}
+    return result.data or {}
+
+
+def ensure_premium(user_id: str) -> None:
+    if _profile(user_id).get("plan") != "premium":
+        raise HTTPException(status_code=402, detail="Premium subscription required")
+
+
+def ensure_report_allowed(user_id: str) -> None:
+    """Enforce the free plan in the database; never rely on a frontend counter."""
+    settings = get_settings()
+    profile = _profile(user_id)
     if not profile:
         get_supabase().table("profiles").upsert({"id": user_id}).execute()
         profile = {"plan": "free", "reports_this_month": 0}

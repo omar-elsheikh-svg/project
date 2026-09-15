@@ -106,6 +106,20 @@ def calculate_all_insights(df: pd.DataFrame) -> dict:
         "average_order_value": round(aov_val, 2),
     }
 
+    order_sizes = df.groupby("order_id").size()
+    single_orders = int((order_sizes == 1).sum())
+    multi_orders = int((order_sizes > 1).sum())
+    results["basket_size_analysis"] = {
+        "single_item_orders": single_orders,
+        "multi_item_orders": multi_orders,
+        "single_item_percentage": round(
+            single_orders / orders_cnt * 100 if orders_cnt else 0.0, 2
+        ),
+        "multi_item_percentage": round(
+            multi_orders / orders_cnt * 100 if orders_cnt else 0.0, 2
+        ),
+    }
+
     if "product_cost" in df.columns:
         cst = float(df["total_cost"].sum())
         profit = rev - cst
@@ -155,10 +169,19 @@ def calculate_all_insights(df: pd.DataFrame) -> dict:
 
             p_hour = df.groupby("hour")["order_id"].nunique().idxmax()
             p_day = df.groupby("day_name")["order_id"].nunique().idxmax()
+            hourly_orders = (
+                df.groupby("hour")["order_id"]
+                .nunique()
+                .reindex(range(24), fill_value=0)
+            )
 
             results["time_analysis"] = {
                 "peak_hour_24h_format": int(p_hour),
                 "peak_day_of_week": str(p_day),
+                "hourly_order_counts": [
+                    {"hour": int(hour), "orders": int(count)}
+                    for hour, count in hourly_orders.items()
+                ],
             }
     except Exception:
         results["time_analysis"] = None

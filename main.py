@@ -13,7 +13,7 @@ from app.ai_service import generate_executive_report
 from app.auth import current_user
 from app.billing import create_checkout_session, handle_webhook
 from app.config import get_settings
-from app.limits import ensure_report_allowed, record_report_usage
+from app.limits import ensure_premium, ensure_report_allowed, record_report_usage
 from app.reports import insights_markdown, insights_pdf
 from app.supabase_client import get_supabase
 from project import calculate_all_insights, clean_df, features_finder
@@ -37,6 +37,19 @@ ALLOWED_SUFFIXES = {".csv", ".xlsx"}
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/me")
+def profile(user: dict = Depends(current_user)) -> dict:
+    result = (
+        get_supabase()
+        .table("profiles")
+        .select("plan")
+        .eq("id", user["id"])
+        .maybe_single()
+        .execute()
+    )
+    return {"user_id": user["id"], "tier": (result.data or {}).get("plan", "free")}
 
 
 @app.post("/datasets/analyze")
@@ -86,6 +99,7 @@ async def create_ai_report(
     request: Request, dataset_id: str, user: dict = Depends(current_user)
 ) -> dict:
     try:
+        ensure_premium(user["id"])
         ensure_report_allowed(user["id"])
     except HTTPException:
         raise
@@ -127,6 +141,7 @@ async def create_ai_report(
 
 @app.get("/datasets/{dataset_id}/markdown")
 def download_markdown(dataset_id: str, user: dict = Depends(current_user)) -> Response:
+    ensure_premium(user["id"])
     result = (
         get_supabase()
         .table("datasets")
@@ -147,6 +162,7 @@ def download_markdown(dataset_id: str, user: dict = Depends(current_user)) -> Re
 
 @app.get("/datasets/{dataset_id}/pdf")
 def download_pdf(dataset_id: str, user: dict = Depends(current_user)) -> Response:
+    ensure_premium(user["id"])
     result = (
         get_supabase()
         .table("datasets")
