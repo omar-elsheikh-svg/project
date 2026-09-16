@@ -6,6 +6,15 @@ from .config import get_settings
 from .supabase_client import get_supabase
 
 
+def normalize_plan(plan: object) -> str:
+    value = " ".join(str(plan or "free").strip().lower().split())
+    return "premium" if value in {"premium", "premium plan"} else "free"
+
+
+def is_premium_plan(plan: object) -> bool:
+    return normalize_plan(plan) == "premium"
+
+
 def _profile(user_id: str) -> dict:
     result = (
         get_supabase()
@@ -19,7 +28,7 @@ def _profile(user_id: str) -> dict:
 
 
 def ensure_premium(user_id: str) -> None:
-    if _profile(user_id).get("plan") != "premium":
+    if not is_premium_plan(_profile(user_id).get("plan")):
         raise HTTPException(status_code=402, detail="Premium subscription required")
 
 
@@ -30,7 +39,7 @@ def ensure_report_allowed(user_id: str) -> None:
     if not profile:
         get_supabase().table("profiles").upsert({"id": user_id}).execute()
         profile = {"plan": "free", "reports_this_month": 0}
-    if profile.get("plan") == "premium":
+    if is_premium_plan(profile.get("plan")):
         return
     month = datetime.now(timezone.utc).strftime("%Y-%m")
     count = (

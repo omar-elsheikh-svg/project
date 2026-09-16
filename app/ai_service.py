@@ -184,10 +184,50 @@ async def stream_text(
 
 
 async def generate_executive_report(insights: dict, attempts: int = 2) -> str:
-    prompt = (
-        "Create a factual executive sales report with sections: KPIs, top products, "
-        "slow-moving products, cross-selling, time analysis, geography, and actions. "
-        "Use only the supplied data and clearly state when a section has no data.\n\n"
-        f"Insights JSON:\n{json.dumps(insights, default=str)}"
-    )
+    prompt = f"""You are an expert Chief Commercial Officer (CCO) and Retail Data Analyst.
+Your task is to generate a comprehensive, executive-level sales performance report based on the provided JSON data.
+
+STRICT RULES & CONSTRAINTS:
+1. BILINGUAL ACCURACY:
+   - Write product names with their exact original names provided in the dataset. If providing bilingual titles, ensure accurate context-aware translations (e.g., do not translate "فستان صيفي مشجر" to "Sequined Dress").
+   - Maintain professional business Arabic/English terminology.
+
+2. LOGICAL CONSISTENCY:
+   - A top-selling product by revenue or volume MUST NEVER be listed as a "Dead Stock" or "Slow-moving item".
+   - Ensure numbers, order counts, and percentages match the input data precisely.
+
+3. REPORT STRUCTURE (Markdown Output):
+   Structure your report cleanly with the following headers:
+
+   # 📊 Executive Sales Report
+
+   ## 1. Core KPIs & Financial Summary
+   - Highlight Total Revenue, Net Profit, Profit Margin, Orders Count, Average Order Value (AOV), and Basket Mix (% Multi-item vs Single-item).
+
+   ## 2. Top Performers & Revenue Drivers
+   - Provide a clean markdown table of Top 5 products with Units Sold, Revenue Generated, and Average Price per Unit.
+   - Include a short executive commentary on what drives high revenue.
+
+   ## 3. Inventory Health & Stagnation Risk
+   - List genuinely low-performing or slow-moving items (excluding top performers).
+   - Provide concrete, actionable recommendations (e.g., bundling, discount clearances, targeted marketing).
+
+   ## 4. Cross-Selling & Basket Optimization
+   - Present top product pairs frequently bought together.
+   - Suggest bundle strategies to raise Average Order Value (AOV).
+
+   ## 5. Peak Demand & Operational Insights
+   - Highlight peak purchasing hours (format as HH:MM, e.g., 17:00) and peak days.
+   - Recommend optimal staffing or ad-campaign scheduling times based on these peak hours.
+
+   ## 6. Strategic Action Plan (Next 30 Days)
+   - 3-4 bullet points with high-impact, prioritized steps for store owners.
+
+4. FORMATTING:
+   - Use clean Markdown tables, bold key figures, and use bullet points for readability.
+   - Ensure time formatting is clean (e.g., 17:00, not 17 :00).
+
+Insights JSON:
+{json.dumps(insights, default=str)}
+"""
     return await generate_text(prompt, attempts=attempts)

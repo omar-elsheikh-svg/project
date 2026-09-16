@@ -14,7 +14,12 @@ from app.ai_service import generate_executive_report
 from app.auth import current_user
 from app.billing import create_checkout_session, handle_webhook
 from app.config import get_settings
-from app.limits import ensure_premium, ensure_report_allowed, record_report_usage
+from app.limits import (
+    ensure_premium,
+    ensure_report_allowed,
+    normalize_plan,
+    record_report_usage,
+)
 from app.reports import insights_markdown, insights_pdf
 from app.supabase_client import get_supabase
 from project import calculate_all_insights, clean_df, features_finder
@@ -51,7 +56,7 @@ def profile(user: dict = Depends(current_user)) -> dict:
         .maybe_single()
         .execute()
     )
-    plan = str((result.data or {}).get("plan", "free")).lower()
+    plan = normalize_plan((result.data or {}).get("plan", "free"))
     return {"user_id": user["id"], "plan": plan, "tier": plan}
 
 

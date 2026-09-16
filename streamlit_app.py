@@ -9,11 +9,14 @@ import streamlit as st
 from dotenv import load_dotenv
 from supabase import create_client
 
+from app.limits import is_premium_plan, normalize_plan
+
 load_dotenv(Path(__file__).with_name(".env"), override=False)
 
 API_URL = os.getenv("API_URL", "http://localhost:8000").rstrip("/")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
+CURRENCY_SYMBOL = os.getenv("CURRENCY_SYMBOL", "$")
 
 st.set_page_config(page_title="FinExpert", page_icon="F", layout="wide")
 st.title("FinExpert")
@@ -80,7 +83,7 @@ def sync_user_profile() -> None:
     response = api_request("GET", "/me")
     if response is not None and response.ok:
         profile = response.json()
-        plan = str(profile.get("plan", profile.get("tier", "free"))).lower()
+        plan = normalize_plan(profile.get("plan") or profile.get("tier"))
         st.session_state.user_profile = {**profile, "plan": plan, "tier": plan}
         return
 
@@ -96,7 +99,14 @@ def sync_user_profile() -> None:
 
 def is_premium() -> bool:
     profile = st.session_state.get("user_profile", {})
-    return str(profile.get("plan", profile.get("tier", "free"))).lower() == "premium"
+    return is_premium_plan(profile.get("plan") or profile.get("tier"))
+
+
+def format_currency(value: object) -> str:
+    try:
+        return f"{CURRENCY_SYMBOL}{float(value):,.2f}"
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def render_upgrade_cta(key: str) -> None:
@@ -115,10 +125,24 @@ def render_upgrade_cta(key: str) -> None:
             st.error(response_error(checkout_response))
 
 
-def teaser_table(rows: list[dict], columns: list[str], key: str) -> None:
+def teaser_table(
+    rows: list[dict], columns: list[str], key: str, premium: bool = False
+) -> None:
+    def display_rows(values: list[dict]) -> pd.DataFrame:
+        frame = pd.DataFrame(values)
+        if "revenue_generated" in frame:
+            frame["revenue_generated"] = frame["revenue_generated"].map(format_currency)
+        return frame
+
+    if premium:
+        if rows:
+            st.dataframe(display_rows(rows), hide_index=True, width="stretch")
+        else:
+            st.info("No matching opportunities found.")
+        return
     visible = rows[:2]
     if visible:
-        st.dataframe(pd.DataFrame(visible), hide_index=True, width="stretch")
+        st.dataframe(display_rows(visible), hide_index=True, width="stretch")
     hidden = rows[2:]
     if hidden:
         cells = "".join(
@@ -203,9 +227,14 @@ if "dataset" in st.session_state:
     insights = dataset["insights"]
     metrics = insights.get("general_metrics", {})
     columns = st.columns(5)
-    columns[0].metric("Revenue", f"{metrics.get('total_revenue', 0):,.2f}")
+    columns[0].metric(
+        "Revenue", f"{CURRENCY_SYMBOL}{metrics.get('total_revenue', 0):,.2f}"
+    )
     columns[1].metric("Orders", f"{metrics.get('total_orders', 0):,}")
-    columns[2].metric("Average order", f"{metrics.get('average_order_value', 0):,.2f}")
+    columns[2].metric(
+        "Average order",
+        f"{CURRENCY_SYMBOL}{metrics.get('average_order_value', 0):,.2f}",
+    )
     columns[3].metric(
         "Margin",
         (
@@ -236,7 +265,7 @@ if "dataset" in st.session_state:
             st.plotly_chart(
                 px.imshow(
                     [hourly["orders"].tolist()],
-                    x=[f"{hour:02d}:00" for hour in hourly["hour"]],
+                    x=[f"{int(hour):02d}:00" for hour in hourly["hour"]],
                     y=["Orders"],
                     labels={"x": "Hour of day", "color": "Orders"},
                     color_continuous_scale="Blues",
@@ -249,13 +278,34 @@ if "dataset" in st.session_state:
         insights.get("products_analysis", {}).get("top_5_products", [])
     )
     if not top_products.empty:
+        top_products["revenue_label"] = top_products["revenue_generated"].map(
+            format_currency
+        )
+        top_products = top_products.sort_values("revenue_generated")
+        top_products_chart = px.bar(
+            top_products,
+            x="revenue_generated",
+            y="product_name",
+            orientation="h",
+            text="revenue_label",
+            title="Top products by revenue",
+            color="revenue_generated",
+            color_continuous_scale="Tealgrn",
+        )
+        top_products_chart.update_traces(
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="%{y}<br>%{text}<extra></extra>",
+        )
+        top_products_chart.update_layout(
+            margin={"l": 24, "r": 120, "t": 56, "b": 32},
+            xaxis_title="Revenue",
+            yaxis_title=None,
+            coloraxis_showscale=False,
+            height=max(300, 60 * len(top_products) + 100),
+        )
         st.plotly_chart(
-            px.bar(
-                top_products,
-                x="product_name",
-                y="revenue_generated",
-                title="Top products by revenue",
-            ),
+            top_products_chart,
             use_container_width=True,
         )
 
@@ -269,6 +319,7 @@ if "dataset" in st.session_state:
             cross_sell,
             ["product_1", "product_2", "times_bought_together"],
             "upgrade_cross_sell",
+            premium=is_premium(),
         )
     with stock_col:
         st.markdown("#### Slow-moving inventory")
@@ -276,6 +327,7 @@ if "dataset" in st.session_state:
             dead_stock,
             ["product_name", "units_sold", "revenue_generated"],
             "upgrade_dead_stock",
+            premium=is_premium(),
         )
 
     st.subheader("AI executive report")

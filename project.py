@@ -12,6 +12,17 @@ import os
 from google import genai
 from google.genai import types
 
+PRODUCT_NAME_TRANSLATIONS = {
+    "فستان صيفي مشجر": "Floral Summer Dress",
+    "حذاء رياضي مريح": "Comfortable Sports Shoes",
+}
+
+
+def translate_product_name(product_name: object) -> str:
+    """Return the canonical English label for known catalog products."""
+    name = str(product_name).strip()
+    return PRODUCT_NAME_TRANSLATIONS.get(name, name)
+
 
 def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     cleaned = df.copy()
@@ -75,6 +86,7 @@ def features_finder(df: pd.DataFrame) -> pd.DataFrame:
 
     selected = [c for c in mapping_rules.keys() if c in df.columns]
     data = df[selected].copy()
+    data["product_name"] = data["product_name"].map(translate_product_name)
 
     data["quantity"] = pd.to_numeric(data["quantity"], errors="coerce").fillna(0)
     data["unit_price"] = pd.to_numeric(data["unit_price"], errors="coerce").fillna(0.0)
@@ -137,7 +149,12 @@ def calculate_all_insights(df: pd.DataFrame) -> dict:
     top_items = product_stats.sort_values(by="revenue_generated", ascending=False).head(
         5
     )
-    slow_items = product_stats.sort_values(by="units_sold", ascending=True).head(5)
+    top_product_names = set(top_items["product_name"])
+    slow_items = (
+        product_stats[~product_stats["product_name"].isin(top_product_names)]
+        .sort_values(by="units_sold", ascending=True)
+        .head(5)
+    )
 
     results["products_analysis"] = {
         "top_5_products": top_items.to_dict(orient="records"),
