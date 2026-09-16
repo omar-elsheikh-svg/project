@@ -1,6 +1,7 @@
 from app import limits
 from app import ai_service
 from app.reports import insights_markdown, insights_pdf
+from project import format_executive_summary
 
 
 def test_markdown_export_contains_metrics():
@@ -28,6 +29,56 @@ def test_pdf_export_is_valid_pdf():
         }
     )
     assert result.startswith(b"%PDF")
+
+
+def test_exports_use_formatted_executive_summary():
+    insights = {
+        "general_metrics": {
+            "total_revenue": 123.5,
+            "total_orders": 2,
+            "average_order_value": 61.75,
+        },
+        "products_analysis": {
+            "top_5_products": [],
+            "dead_stock_candidates": [],
+        },
+    }
+
+    summary = format_executive_summary(insights, output_file=None)
+    exported = insights_markdown(insights)
+
+    assert "EXECUTIVE SALES SUMMARY" in summary
+    assert summary.strip() in exported
+
+
+def test_ai_report_prompt_uses_summary_and_strategic_sections(monkeypatch):
+    captured = []
+
+    async def fake_generate_text(prompt, attempts=2):
+        captured.append(prompt)
+        return "report"
+
+    monkeypatch.setattr(ai_service, "generate_text", fake_generate_text)
+
+    import asyncio
+
+    asyncio.run(
+        ai_service.generate_executive_report(
+            {
+                "general_metrics": {
+                    "total_revenue": 123.5,
+                    "total_orders": 2,
+                    "average_order_value": 61.75,
+                }
+            }
+        )
+    )
+
+    prompt = captured[0]
+    assert "Verified sales summary:" in prompt
+    assert '"general_metrics"' not in prompt
+    assert "CFO Performance Diagnosis" in prompt
+    assert "30-Day Action Plan" in prompt
 
 
 def test_missing_profile_is_provisioned(monkeypatch):

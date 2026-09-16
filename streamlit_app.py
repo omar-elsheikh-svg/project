@@ -125,7 +125,7 @@ def render_upgrade_cta(key: str) -> None:
             st.error(response_error(checkout_response))
 
 
-def teaser_table(
+def render_insight_table(
     rows: list[dict], columns: list[str], key: str, premium: bool = False
 ) -> None:
     def display_rows(values: list[dict]) -> pd.DataFrame:
@@ -134,34 +134,17 @@ def teaser_table(
             frame["revenue_generated"] = frame["revenue_generated"].map(format_currency)
         return frame
 
-    if premium:
-        if rows:
-            st.dataframe(display_rows(rows), hide_index=True, width="stretch")
-        else:
-            st.info("No matching opportunities found.")
-        return
-    visible = rows[:2]
-    if visible:
-        st.dataframe(display_rows(visible), hide_index=True, width="stretch")
-    hidden = rows[2:]
-    if hidden:
-        cells = "".join(
-            f"<tr>{''.join(f'<td>{escape(str(row.get(column, "")))}</td>' for column in columns)}</tr>"
-            for row in hidden
+    visible_rows = rows if premium else rows[:2]
+    if visible_rows:
+        st.dataframe(display_rows(visible_rows), hide_index=True, width="stretch")
+    else:
+        st.info("No matching opportunities found.")
+
+    if not premium and len(rows) > len(visible_rows):
+        st.caption(
+            f"Showing {len(visible_rows)} of {len(rows)} opportunities. Premium includes the full analysis."
         )
-        headers = "".join(
-            f"<th>{escape(column.replace('_', ' ').title())}</th>" for column in columns
-        )
-        st.markdown(
-            f'<div class="premium-blur"><table><thead><tr>{headers}</tr></thead><tbody>{cells}</tbody></table></div>',
-            unsafe_allow_html=True,
-        )
-    elif rows:
-        st.markdown(
-            '<div class="premium-blur">More growth opportunities are available in Premium.</div>',
-            unsafe_allow_html=True,
-        )
-    render_upgrade_cta(key)
+        render_upgrade_cta(key)
 
 
 if "access_token" not in st.session_state:
@@ -315,7 +298,7 @@ if "dataset" in st.session_state:
     insight_col, stock_col = st.columns(2)
     with insight_col:
         st.markdown("#### Cross-selling opportunities")
-        teaser_table(
+        render_insight_table(
             cross_sell,
             ["product_1", "product_2", "times_bought_together"],
             "upgrade_cross_sell",
@@ -323,7 +306,7 @@ if "dataset" in st.session_state:
         )
     with stock_col:
         st.markdown("#### Slow-moving inventory")
-        teaser_table(
+        render_insight_table(
             dead_stock,
             ["product_name", "units_sold", "revenue_generated"],
             "upgrade_dead_stock",
@@ -345,10 +328,13 @@ if "dataset" in st.session_state:
             st.markdown(st.session_state.report)
     else:
         st.markdown(
-            f"Preview: Your store generated **{metrics.get('total_revenue', 0):,.2f}** in revenue across **{metrics.get('total_orders', 0):,}** orders."
+            f"Preview: Your store generated **{format_currency(metrics.get('total_revenue', 0))}** in revenue across **{metrics.get('total_orders', 0):,}** orders."
+        )
+        preview_hour = (
+            f"{int(peak_hour):02d}:00" if peak_hour is not None else "your busiest hour"
         )
         st.markdown(
-            f'<div class="premium-blur">Peak demand is {escape(str(peak_day))} at {escape(str(peak_hour or "your busiest hour"))}:00. The full report includes campaign actions, product pair recommendations, and inventory priorities.</div>',
+            f'<div class="premium-blur">Peak demand is {escape(str(peak_day))} at {escape(preview_hour)}. The full report includes campaign actions, product pair recommendations, and inventory priorities.</div>',
             unsafe_allow_html=True,
         )
         render_upgrade_cta("upgrade_report")

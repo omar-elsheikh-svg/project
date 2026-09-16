@@ -212,7 +212,7 @@ def calculate_all_insights(df: pd.DataFrame) -> dict:
 
 
 def format_executive_summary(
-    insights: dict, output_file: str = "executive_summary.txt"
+    insights: dict, output_file: str | None = "executive_summary.txt"
 ) -> str:
     def format_number(value) -> str:
         if isinstance(value, float):
@@ -307,8 +307,9 @@ def format_executive_summary(
     lines.extend(["\n" + "=" * 72, "END OF REPORT", "=" * 72])
     report = "\n".join(lines) + "\n"
 
-    with open(output_file, "w", encoding="utf-8") as report_handle:
-        report_handle.write(report)
+    if output_file:
+        with open(output_file, "w", encoding="utf-8") as report_handle:
+            report_handle.write(report)
 
     return report
 

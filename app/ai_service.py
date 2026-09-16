@@ -8,13 +8,14 @@ failures, and tries the next configured model before returning an error.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 from collections.abc import AsyncIterator, Iterable, Mapping
 
 from dotenv import load_dotenv
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
+
+from project import format_executive_summary
 
 load_dotenv()
 
@@ -184,50 +185,33 @@ async def stream_text(
 
 
 async def generate_executive_report(insights: dict, attempts: int = 2) -> str:
-    prompt = f"""You are an expert Chief Commercial Officer (CCO) and Retail Data Analyst.
-Your task is to generate a comprehensive, executive-level sales performance report based on the provided JSON data.
+    summary = format_executive_summary(insights, output_file=None)
+    prompt = f"""You are a senior CFO and Chief Commercial Officer advising a retail business.
+Create a Detailed Strategic Expert Advisory in Markdown from the verified sales summary below.
 
-STRICT RULES & CONSTRAINTS:
-1. BILINGUAL ACCURACY:
-   - Write product names with their exact original names provided in the dataset. If providing bilingual titles, ensure accurate context-aware translations (e.g., do not translate "فستان صيفي مشجر" to "Sequined Dress").
-   - Maintain professional business Arabic/English terminology.
+Use only the supplied figures. Do not invent products, costs, inventory quantities, or causes.
+Preserve product names exactly as written. A top product must never be called slow-moving.
+Use currency formatting with commas and two decimals, and format hours as HH:MM.
 
-2. LOGICAL CONSISTENCY:
-   - A top-selling product by revenue or volume MUST NEVER be listed as a "Dead Stock" or "Slow-moving item".
-   - Ensure numbers, order counts, and percentages match the input data precisely.
+Required report structure:
+# Detailed Strategic Expert Advisory
+## 1. CFO Performance Diagnosis
+Explain revenue quality, profitability, order volume, AOV, and basket mix. Identify the
+most important financial signal and its business implication.
+## 2. CCO Growth Opportunities
+Recommend specific ways to increase AOV and conversion using the top products and
+cross-selling pairs. Prioritize actions by expected commercial impact.
+## 3. Inventory and Risk Analysis
+Assess slow-moving inventory separately from top performers. Discuss markdown, bundle,
+replenishment, concentration, and data-quality risks without inventing evidence.
+## 4. Operational Timing Plan
+Translate peak hours and days into staffing, campaign, merchandising, and fulfillment actions.
+## 5. 30-Day Action Plan
+Give a week-by-week plan with owners, measurable targets, and decision checkpoints.
+## 6. Executive Decisions Required
+List the three decisions the owner should make first.
 
-3. REPORT STRUCTURE (Markdown Output):
-   Structure your report cleanly with the following headers:
-
-   # 📊 Executive Sales Report
-
-   ## 1. Core KPIs & Financial Summary
-   - Highlight Total Revenue, Net Profit, Profit Margin, Orders Count, Average Order Value (AOV), and Basket Mix (% Multi-item vs Single-item).
-
-   ## 2. Top Performers & Revenue Drivers
-   - Provide a clean markdown table of Top 5 products with Units Sold, Revenue Generated, and Average Price per Unit.
-   - Include a short executive commentary on what drives high revenue.
-
-   ## 3. Inventory Health & Stagnation Risk
-   - List genuinely low-performing or slow-moving items (excluding top performers).
-   - Provide concrete, actionable recommendations (e.g., bundling, discount clearances, targeted marketing).
-
-   ## 4. Cross-Selling & Basket Optimization
-   - Present top product pairs frequently bought together.
-   - Suggest bundle strategies to raise Average Order Value (AOV).
-
-   ## 5. Peak Demand & Operational Insights
-   - Highlight peak purchasing hours (format as HH:MM, e.g., 17:00) and peak days.
-   - Recommend optimal staffing or ad-campaign scheduling times based on these peak hours.
-
-   ## 6. Strategic Action Plan (Next 30 Days)
-   - 3-4 bullet points with high-impact, prioritized steps for store owners.
-
-4. FORMATTING:
-   - Use clean Markdown tables, bold key figures, and use bullet points for readability.
-   - Ensure time formatting is clean (e.g., 17:00, not 17 :00).
-
-Insights JSON:
-{json.dumps(insights, default=str)}
+Verified sales summary:
+{summary}
 """
     return await generate_text(prompt, attempts=attempts)
